@@ -6,19 +6,18 @@
   },
   "metadata": {
     "description": "Tal's personal Claude Code plugin marketplace",
-    "version": "0.1.0",
-    "pluginRoot": "./plugins"
+    "version": "0.1.0"
   },
   "plugins": [
     {
       "name": "tal",
-      "source": "tal",
+      "source": "./plugins/tal",
       "description": "Tal's personal Claude Code plugin",
       "version": "0.1.0"
     },
     {
       "name": "smart-notifications",
-      "source": "smart-notifications",
+      "source": "./plugins/smart-notifications",
       "description": "OSX desktop notifications for Claude Code events",
       "version": "0.1.0"
     }
