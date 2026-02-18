@@ -1,0 +1,283 @@
+#!/bin/bash
+# Notification hook script for Claude Code
+# Uses terminal-notifier to display notifications
+# Opens the launching terminal/IDE when user clicks the notification
+
+# Read JSON payload from stdin
+payload=$(cat)
+
+# Check if terminal-notifier is installed
+if ! command -v terminal-notifier &>/dev/null; then
+  echo "ERROR: terminal-notifier is not installed. Please install it with: brew install terminal-notifier" >&2
+  echo '{"continue": true}'
+  exit 0
+fi
+
+# Detect terminal/IDE and get its bundle identifier
+detect_bundle_id() {
+  # First, check if __CFBundleIdentifier is set (most reliable on macOS)
+  if [ -n "$__CFBundleIdentifier" ]; then
+    echo "$__CFBundleIdentifier"
+    return
+  fi
+
+  # Check for JetBrains IDEs (they set TERMINAL_EMULATOR)
+  if [ -n "$TERMINAL_EMULATOR" ]; then
+    case "$TERMINAL_EMULATOR" in
+      *JetBrains*)
+        # Try to detect specific JetBrains IDE from other env vars or process
+        if [ -n "$IDEA_INITIAL_DIRECTORY" ]; then
+          echo "com.jetbrains.intellij"
+          return
+        fi
+        # Default to IntelliJ if we can't determine the specific IDE
+        echo "com.jetbrains.intellij"
+        return
+        ;;
+    esac
+  fi
+
+  # Check for VSCode-specific environment variables
+  if [ -n "$VSCODE_INJECTION" ] || [ -n "$VSCODE_GIT_ASKPASS_NODE" ] || [ -n "$TERM_PROGRAM" ] && [ "$TERM_PROGRAM" = "vscode" ]; then
+    echo "com.microsoft.VSCode"
+    return
+  fi
+
+  # Check for Cursor (VSCode fork)
+  if [ -n "$CURSOR_TRACE_ID" ] || [ "$TERM_PROGRAM" = "cursor" ]; then
+    echo "com.todesktop.230313mzl4w4u92"
+    return
+  fi
+
+  # Fall back to TERM_PROGRAM detection
+  case "$TERM_PROGRAM" in
+    WarpTerminal)
+      echo "dev.warp.Warp-Stable"
+      ;;
+    iTerm.app)
+      echo "com.googlecode.iterm2"
+      ;;
+    Apple_Terminal)
+      echo "com.apple.Terminal"
+      ;;
+    vscode)
+      echo "com.microsoft.VSCode"
+      ;;
+    Hyper)
+      echo "co.zeit.hyper"
+      ;;
+    alacritty)
+      echo "org.alacritty"
+      ;;
+    kitty)
+      echo "net.kovidgoyal.kitty"
+      ;;
+    tmux)
+      # tmux: trace back through parent processes to find the terminal emulator
+      if [ -n "$TMUX" ]; then
+        # Get the tmux client PID
+        client_pid=$(tmux display-message -p '#{client_pid}' 2>/dev/null)
+        if [ -n "$client_pid" ]; then
+          # Trace parent processes to find a GUI app with a bundle ID
+          current_pid=$client_pid
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            # Try to get bundle ID for this PID
+            bundle_info=$(lsappinfo info -only bundleid -pid "$current_pid" 2>/dev/null)
+            if [ -n "$bundle_info" ]; then
+              # Extract bundle ID from output like: "CFBundleIdentifier"="com.example.App"
+              found_bundle=$(echo "$bundle_info" | sed -n 's/.*"\(.*\)"$/\1/p')
+              if [ -n "$found_bundle" ] && [ "$found_bundle" != "NULL" ]; then
+                echo "$found_bundle"
+                return
+              fi
+            fi
+            # Get parent PID
+            parent_pid=$(ps -o ppid= -p "$current_pid" 2>/dev/null | tr -d ' ')
+            if [ -z "$parent_pid" ] || [ "$parent_pid" = "1" ] || [ "$parent_pid" = "0" ]; then
+              break
+            fi
+            current_pid=$parent_pid
+          done
+        fi
+      fi
+      # Fallback: check LC_TERMINAL
+      if [ -n "$LC_TERMINAL" ]; then
+        case "$LC_TERMINAL" in
+          iTerm2) echo "com.googlecode.iterm2" ;;
+          *) echo "" ;;  # Unknown, trigger warning
+        esac
+      else
+        echo ""  # Unknown, trigger warning
+      fi
+      ;;
+    *)
+      # Unknown terminal - return empty to trigger warning
+      echo ""
+      ;;
+  esac
+}
+
+# Get the bundle identifier for the current terminal/IDE
+BUNDLE_ID=$(detect_bundle_id)
+
+# Skip notifications for ghostty (has built-in notifications)
+if [ "$TERM_PROGRAM" = "ghostty" ]; then
+  echo '{"continue": true}'
+  exit 0
+fi
+
+# If we couldn't detect the terminal, show a warning notification
+if [ -z "$BUNDLE_ID" ]; then
+  terminal-notifier -message "Unsupported terminal/IDE: TERM_PROGRAM='$TERM_PROGRAM'" -title "Configuration Warning - CC" -sound "Basso" &>/dev/null &
+fi
+
+# Extract fields from payload
+message=$(echo "$payload" | jq -r '.message // "Notification from Claude"')
+notification_type=$(echo "$payload" | jq -r '.notification_type // "unknown"')
+cwd=$(echo "$payload" | jq -r '.cwd // ""')
+transcript_file=$(echo "$payload" | jq -r '.transcript_file // ""')
+
+# Read the last line and last USER message from the transcript file if available
+last_transcript_line=""
+last_user_message=""
+if [ -n "$transcript_file" ] && [ -f "$transcript_file" ]; then
+  # Get the last line of the transcript (any type)
+  last_transcript_line=$(tail -n 1 "$transcript_file" 2>/dev/null)
+
+  # Find the last line where type is "user" and extract the entire line
+  # Use tail -r to reverse since tac doesn't exist on macOS
+  last_user_message=$(tail -r "$transcript_file" 2>/dev/null | jq -r 'select(.type == "user")' | head -n 1)
+fi
+
+# Check for repeated notifications
+is_repeat="false"
+
+if [ -n "$last_user_message" ] && [ -n "$cwd" ]; then
+  # Create a cache file path specific to this cwd
+  cwd_hash=$(echo -n "$cwd" | shasum -a 256 | cut -d' ' -f1)
+  cache_file="${TMPDIR:-/tmp}/claude-notify-cache-${cwd_hash}.txt"
+
+  # Read cached last user message
+  if [ -f "$cache_file" ]; then
+    cached_user_message=$(cat "$cache_file" 2>/dev/null)
+    if [ "$cached_user_message" = "$last_user_message" ]; then
+      is_repeat="true"
+    fi
+  fi
+  # Update cache with current user message
+  echo "$last_user_message" > "$cache_file"
+fi
+
+# Append payload with timestamp to .jsonl file in cwd (only if logging is enabled)
+if [ -n "$ENABLE_CLAUDE_NOTIFICATION_LOGGING" ] && [ -n "$cwd" ] && [ -d "$cwd" ]; then
+  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  timestamp_ny=$(TZ=America/New_York date +"%Y-%m-%dT%H:%M:%S%z")
+
+  # Add the last transcript line to the log if available
+  if [ -n "$last_transcript_line" ]; then
+    echo "$payload" | jq -c --arg ts "$timestamp" --arg ts_ny "$timestamp_ny" --arg repeat "$is_repeat" --argjson transcript_line "$last_transcript_line" '. + {timestamp: $ts, timestamp_ny: $ts_ny, is_repeat: $repeat, last_transcript_line: $transcript_line}' >> "$cwd/claude-notifications.jsonl"
+  else
+    echo "$payload" | jq -c --arg ts "$timestamp" --arg ts_ny "$timestamp_ny" --arg repeat "$is_repeat" '. + {timestamp: $ts, timestamp_ny: $ts_ny, is_repeat: $repeat}' >> "$cwd/claude-notifications.jsonl"
+  fi
+
+  # Limit log file to 500 lines (keep only the most recent entries)
+  log_file="$cwd/claude-notifications.jsonl"
+  if [ -f "$log_file" ]; then
+    line_count=$(wc -l < "$log_file" | tr -d ' ')
+    if [ "$line_count" -gt 500 ]; then
+      tail -n 500 "$log_file" > "$log_file.tmp" && mv "$log_file.tmp" "$log_file"
+    fi
+  fi
+fi
+
+# Set title and sound based on notification type
+case "$notification_type" in
+  "permission_prompt")
+    title="Permission Required - CC"
+    sound="Glass"
+    ;;
+  "idle_prompt")
+    title="Waiting for Input - CC"
+    sound="Purr"
+    ;;
+  "auth_success")
+    title="Authentication - CC"
+    sound="Hero"
+    ;;
+  "elicitation_dialog")
+    title="Input Needed - CC"
+    sound="Pop"
+    ;;
+  *)
+    title="CC"
+    sound="default"
+    ;;
+esac
+
+# Add repeat emoji to title if this is a repeated notification
+if [ "$is_repeat" = "true" ]; then
+  title="🔁 $title"
+fi
+
+# Add project context to message if cwd is available
+subtitle=""
+if [ -n "$cwd" ]; then
+  # Use PROJECT_NAME env var if set, otherwise fall back to folder name
+  if [ -n "$PROJECT_NAME" ]; then
+    subtitle="$PROJECT_NAME"
+  else
+    subtitle=$(basename "$cwd")
+  fi
+fi
+
+# Build the base terminal-notifier command
+notifier_args=(-message "$message" -title "$title" -sound "$sound")
+if [ -n "$subtitle" ]; then
+  notifier_args+=(-subtitle "$subtitle")
+fi
+
+# Determine click action: tmux-aware pane navigation or simple app activation
+if [ -n "$TMUX_PANE" ]; then
+  # Detect bundle ID from the current tmux client's PID, not the inherited env.
+  # The env-based BUNDLE_ID reflects whichever terminal created the tmux session,
+  # which may differ from the terminal currently attached.
+  tmux_client_pid=$(tmux display-message -p '#{client_pid}')
+  tmux_bundle_id=""
+  if [ -n "$tmux_client_pid" ]; then
+    current_pid=$tmux_client_pid
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      bundle_info=$(lsappinfo info -only bundleid -pid "$current_pid" 2>/dev/null)
+      if [ -n "$bundle_info" ]; then
+        found_bundle=$(echo "$bundle_info" | sed -n 's/.*"\(.*\)"$/\1/p')
+        if [ -n "$found_bundle" ] && [ "$found_bundle" != "NULL" ]; then
+          tmux_bundle_id="$found_bundle"
+          break
+        fi
+      fi
+      parent_pid=$(ps -o ppid= -p "$current_pid" 2>/dev/null | tr -d ' ')
+      if [ -z "$parent_pid" ] || [ "$parent_pid" = "1" ] || [ "$parent_pid" = "0" ]; then
+        break
+      fi
+      current_pid=$parent_pid
+    done
+  fi
+
+  if [ -n "$tmux_bundle_id" ]; then
+    # Capture tmux pane metadata for click-to-return
+    tmux_target_window=$(tmux display-message -t "$TMUX_PANE" -p '#S:#I')
+    tmux_client_tty=$(tmux display-message -p '#{client_tty}')
+    tmux_socket_path=$(tmux display-message -p '#{socket_path}')
+    tmux_bin=$(command -v tmux)
+    tmux_return_script="$(cd "$(dirname "$0")" && pwd)/tmux-return.sh"
+    notifier_args+=(-execute "$tmux_return_script $tmux_bundle_id $tmux_client_tty $tmux_socket_path $tmux_target_window $TMUX_PANE $tmux_bin")
+  elif [ -n "$BUNDLE_ID" ]; then
+    notifier_args+=(-activate "$BUNDLE_ID")
+  fi
+elif [ -n "$BUNDLE_ID" ]; then
+  notifier_args+=(-activate "$BUNDLE_ID")
+fi
+
+terminal-notifier "${notifier_args[@]}" &>/dev/null
+
+# Output standard hook response immediately
+echo '{"continue": true}'

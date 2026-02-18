@@ -1,0 +1,8 @@
+{
+  "name": "smart-notifications",
+  "description": "OSX desktop notifications for Claude Code events",
+  "author": {
+    "name": "Mat Brown",
+    "email": "mat.brown@datadoghq.com"
+  }
+}
