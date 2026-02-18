@@ -1,0 +1,26 @@
+{
+  "name": "tal-marketplace",
+  "owner": {
+    "name": "Tal Atlas",
+    "email": "tal.atlas@datadoghq.com"
+  },
+  "metadata": {
+    "description": "Tal's personal Claude Code plugin marketplace",
+    "version": "0.1.0",
+    "pluginRoot": "./plugins"
+  },
+  "plugins": [
+    {
+      "name": "tal",
+      "source": "tal",
+      "description": "Tal's personal Claude Code plugin",
+      "version": "0.1.0"
+    },
+    {
+      "name": "smart-notifications",
+      "source": "smart-notifications",
+      "description": "OSX desktop notifications for Claude Code events",
+      "version": "0.1.0"
+    }
+  ]
+}
