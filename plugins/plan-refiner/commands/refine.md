@@ -8,6 +8,8 @@ allowed-tools:
   - Glob
   - AskUserQuestion
   - Skill
+  - TodoWrite
+  - TodoRead
 ---
 
 # Refine Command

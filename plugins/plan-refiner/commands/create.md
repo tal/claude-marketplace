@@ -10,6 +10,8 @@ allowed-tools:
   - AskUserQuestion
   - Skill
   - Task
+  - TodoWrite
+  - TodoRead
 ---
 
 # Plan Command

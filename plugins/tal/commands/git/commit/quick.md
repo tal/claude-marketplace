@@ -3,7 +3,7 @@ argument-hint: [type] [scope] [rationale]
 description: Quickly commit all changes with a well-formatted commit message
 model: sonnet
 context: fork
-allowed-tools: Bash(git add:*), Bash(git commit:*), Bash(git log:*)
+allowed-tools: Bash(git add:*), Bash(git commit:*), Bash(git log:*), TodoWrite, TodoRead
 ---
 
 # Quick Commit
