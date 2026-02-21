@@ -5,27 +5,23 @@
     "email": "tal.atlas@datadoghq.com"
   },
   "metadata": {
-    "description": "Tal's personal Claude Code plugin marketplace",
-    "version": "0.1.0"
+    "description": "Tal's personal Claude Code plugin marketplace"
   },
   "plugins": [
     {
       "name": "tal",
       "source": "./plugins/tal",
-      "description": "Tal's personal Claude Code plugin",
-      "version": "0.1.0"
+      "description": "Tal's personal Claude Code plugin"
     },
     {
       "name": "smart-notifications",
       "source": "./plugins/smart-notifications",
-      "description": "OSX desktop notifications for Claude Code events",
-      "version": "0.1.0"
+      "description": "OSX desktop notifications for Claude Code events"
     },
     {
       "name": "plan-refiner",
       "source": "./plugins/plan-refiner",
-      "description": "Refine plans and specs through in-depth interviews using strategic questioning",
-      "version": "0.1.0"
+      "description": "Refine plans and specs through in-depth interviews using strategic questioning"
     }
   ]
 }
