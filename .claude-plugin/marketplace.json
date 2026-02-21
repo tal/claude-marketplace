@@ -20,6 +20,12 @@
       "source": "./plugins/smart-notifications",
       "description": "OSX desktop notifications for Claude Code events",
       "version": "0.1.0"
+    },
+    {
+      "name": "plan-refiner",
+      "source": "./plugins/plan-refiner",
+      "description": "Refine plans and specs through in-depth interviews using strategic questioning",
+      "version": "0.1.0"
     }
   ]
 }

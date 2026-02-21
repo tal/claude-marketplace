@@ -1,0 +1,10 @@
+{
+  "name": "plan-refiner",
+  "version": "0.1.0",
+  "description": "Refine plans and specs through in-depth interviews using strategic questioning",
+  "author": {
+    "name": "Tal",
+    "email": ""
+  },
+  "keywords": ["planning", "requirements", "specification", "interview", "refinement"]
+}
